@@ -11,9 +11,10 @@ No administrator privileges are required.
 from __future__ import annotations
 
 import ctypes
+import sys
 import time
 import uuid
-from ctypes import POINTER, Structure, byref, c_void_p, create_string_buffer, wintypes
+from ctypes import POINTER, Structure, byref, c_void_p, create_string_buffer
 from dataclasses import dataclass
 
 # {28d78fad-5a12-11d1-ae5b-0000f803a8c2} == GUID_DEVINTERFACE_USBPRINT
@@ -28,85 +29,83 @@ ERROR_IO_PENDING = 997
 ERROR_NO_MORE_ITEMS = 259
 WAIT_OBJECT_0 = 0
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
-
-
-class GUID(Structure):
-    _fields_ = [
-        ("Data1", wintypes.DWORD),
-        ("Data2", wintypes.WORD),
-        ("Data3", wintypes.WORD),
-        ("Data4", wintypes.BYTE * 8),
-    ]
-
-
-class SP_DEVICE_INTERFACE_DATA(Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("InterfaceClassGuid", GUID),
-        ("Flags", wintypes.DWORD),
-        ("Reserved", ctypes.c_size_t),
-    ]
-
-
-class SP_DEVICE_INTERFACE_DETAIL_DATA_W(Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("DevicePath", wintypes.WCHAR * 260),
-    ]
-
-
-# cbSize is the size of the fixed header, not of this over-sized buffer.
 _DETAIL_CB_SIZE = 8 if ctypes.sizeof(ctypes.c_void_p) == 8 else 6
 
+if sys.platform == "win32":
+    from ctypes import wintypes
 
-class OVERLAPPED(Structure):
-    _fields_ = [
-        ("Internal", ctypes.c_size_t),
-        ("InternalHigh", ctypes.c_size_t),
-        ("Offset", wintypes.DWORD),
-        ("OffsetHigh", wintypes.DWORD),
-        ("hEvent", wintypes.HANDLE),
+    class GUID(Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", wintypes.BYTE * 8),
+        ]
+
+    class SP_DEVICE_INTERFACE_DATA(Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("InterfaceClassGuid", GUID),
+            ("Flags", wintypes.DWORD),
+            ("Reserved", ctypes.c_size_t),
+        ]
+
+    class SP_DEVICE_INTERFACE_DETAIL_DATA_W(Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("DevicePath", wintypes.WCHAR * 260),
+        ]
+
+    class OVERLAPPED(Structure):
+        _fields_ = [
+            ("Internal", ctypes.c_size_t),
+            ("InternalHigh", ctypes.c_size_t),
+            ("Offset", wintypes.DWORD),
+            ("OffsetHigh", wintypes.DWORD),
+            ("hEvent", wintypes.HANDLE),
+        ]
+
+    _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _setupapi = ctypes.WinDLL("setupapi", use_last_error=True)
+
+    _setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
+    _setupapi.SetupDiGetClassDevsW.argtypes = [
+        POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD
+    ]
+    _setupapi.SetupDiEnumDeviceInterfaces.argtypes = [
+        wintypes.HANDLE, c_void_p, POINTER(GUID), wintypes.DWORD,
+        POINTER(SP_DEVICE_INTERFACE_DATA),
+    ]
+    _setupapi.SetupDiGetDeviceInterfaceDetailW.argtypes = [
+        wintypes.HANDLE, POINTER(SP_DEVICE_INTERFACE_DATA),
+        POINTER(SP_DEVICE_INTERFACE_DETAIL_DATA_W), wintypes.DWORD,
+        POINTER(wintypes.DWORD), c_void_p,
+    ]
+    _setupapi.SetupDiDestroyDeviceInfoList.argtypes = [wintypes.HANDLE]
+
+    _k32.CreateFileW.restype = wintypes.HANDLE
+    _k32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    _k32.WriteFile.argtypes = [
+        wintypes.HANDLE, wintypes.LPCVOID, wintypes.DWORD,
+        POINTER(wintypes.DWORD), POINTER(OVERLAPPED),
+    ]
+    _k32.CreateEventW.restype = wintypes.HANDLE
+    _k32.CreateEventW.argtypes = [c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
+    _k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    _k32.GetOverlappedResult.argtypes = [
+        wintypes.HANDLE, POINTER(OVERLAPPED), POINTER(wintypes.DWORD), wintypes.BOOL
     ]
 
-
-_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_setupapi = ctypes.WinDLL("setupapi", use_last_error=True)
-
-_setupapi.SetupDiGetClassDevsW.restype = wintypes.HANDLE
-_setupapi.SetupDiGetClassDevsW.argtypes = [
-    POINTER(GUID), wintypes.LPCWSTR, wintypes.HWND, wintypes.DWORD
-]
-_setupapi.SetupDiEnumDeviceInterfaces.argtypes = [
-    wintypes.HANDLE, c_void_p, POINTER(GUID), wintypes.DWORD,
-    POINTER(SP_DEVICE_INTERFACE_DATA),
-]
-_setupapi.SetupDiGetDeviceInterfaceDetailW.argtypes = [
-    wintypes.HANDLE, POINTER(SP_DEVICE_INTERFACE_DATA),
-    POINTER(SP_DEVICE_INTERFACE_DETAIL_DATA_W), wintypes.DWORD,
-    POINTER(wintypes.DWORD), c_void_p,
-]
-_setupapi.SetupDiDestroyDeviceInfoList.argtypes = [wintypes.HANDLE]
-
-_k32.CreateFileW.restype = wintypes.HANDLE
-_k32.CreateFileW.argtypes = [
-    wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, c_void_p,
-    wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
-]
-_k32.WriteFile.argtypes = [
-    wintypes.HANDLE, wintypes.LPCVOID, wintypes.DWORD,
-    POINTER(wintypes.DWORD), POINTER(OVERLAPPED),
-]
-_k32.CreateEventW.restype = wintypes.HANDLE
-_k32.CreateEventW.argtypes = [c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR]
-_k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-_k32.GetOverlappedResult.argtypes = [
-    wintypes.HANDLE, POINTER(OVERLAPPED), POINTER(wintypes.DWORD), wintypes.BOOL
-]
-
-
-def _guid(value: str) -> GUID:
-    u = uuid.UUID(value)
-    return GUID(u.fields[0], u.fields[1], u.fields[2], (wintypes.BYTE * 8)(*u.bytes[8:]))
+    def _guid(value: str) -> GUID:
+        u = uuid.UUID(value)
+        return GUID(u.fields[0], u.fields[1], u.fields[2], (wintypes.BYTE * 8)(*u.bytes[8:]))
+else:
+    wintypes = None
+    _k32 = None
+    _setupapi = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +119,8 @@ class Device:
 
 def list_devices() -> list[Device]:
     """Return every present USBPRINT device interface."""
+    if sys.platform != "win32":
+        raise RuntimeError("USBPRINT device discovery is only supported on Windows.")
     guid = _guid(USBPRINT_GUID)
     flags = DIGCF_PRESENT | DIGCF_DEVICEINTERFACE
     handle = _setupapi.SetupDiGetClassDevsW(byref(guid), None, None, flags)
@@ -167,6 +168,8 @@ class UsbPrinter:
     """Write-only channel to a USB printer-class device."""
 
     def __init__(self, path: str | None = None, timeout: float = 20.0):
+        if sys.platform != "win32":
+            raise RuntimeError("USBPRINT raw hardware writes are only supported on Windows.")
         devices = list_devices()
         if not devices:
             raise RuntimeError(
