@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200mm" height="120mm" viewBox="0 0 200 120">
+  <rect x="5" y="5" width="190" height="110" fill="none" stroke="black" stroke-width="0.5"/>
+  <text x="10" y="18" font-size="8">DesignJet 750C - SVG to HP-GL/2</text>
+  <path d="M10,40 C40,10 80,70 110,40 S180,10 190,40" fill="none" stroke="black" stroke-width="0.6"/>
+  <circle cx="60" cy="85" r="18" fill="none" stroke="black" stroke-width="0.4"/>
+  <polyline points="110,70 130,100 150,70 170,100" fill="none" stroke="black" stroke-width="0.5"/>
+  <text x="10" y="110" font-size="5" fill="black">Curvas, circulos y texto</text>
+</svg>
